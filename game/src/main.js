@@ -3,12 +3,12 @@
 // paints what is there. The game moves between six screens: title, play,
 // paused, level clear, game over and win.
 //
-// ?seed=N fixes the level layouts' random touches. ?shot=start|play|alert|win
-// (with &seed=N) stages that scene instead of running the loop, paints it
-// twice and sets window.__shotReady for a screenshot.
+// ?seed=N fixes the level layouts' random touches. ?shot=start|play|alert|
+// vault|camera|win (with &seed=N) stages that scene instead of running the
+// loop, paints it twice and sets window.__shotReady for a screenshot.
 import { BEST_KEY, FIELD, LIVES, STEP } from './config.js';
 import { createRandom } from './random.js';
-import { createWorld, EVENT_ARTIFACT, EVENT_CAUGHT, EVENT_COIN, EVENT_GAME_OVER, EVENT_LEVEL_CLEAR } from './world.js';
+import { createWorld, EVENT_ALARM, EVENT_ARTIFACT, EVENT_CAUGHT, EVENT_COIN, EVENT_GAME_OVER, EVENT_KEYCARD, EVENT_LASER, EVENT_LEVEL_CLEAR, EVENT_SMOKE } from './world.js';
 import { ACTION_CONFIRM, ACTION_PAUSE, createInput } from './input.js';
 import { createAudio } from './audio.js';
 import { createRenderer, SCREEN_LEVEL_CLEAR, SCREEN_OVER, SCREEN_PAUSED, SCREEN_PLAY, SCREEN_TITLE, SCREEN_WIN } from './render.js';
@@ -126,9 +126,20 @@ function runGame() {
     const click = input.takeClick();
     const throwAt = click && screen === SCREEN_PLAY ? clickToWorld(click) : null;
     if (throwAt) audio.pebble();
-    const events = world.step(STEP, input.steer(), input.sneaking(), throwAt);
+    const smoke = input.takeSmoke();
+    let smokeAt = null;
+    if (smoke && screen === SCREEN_PLAY) {
+      // X drops the bomb at the thief's feet; a right click drops it where
+      // it lands, up to the world's throw range.
+      smokeAt = smoke.here ? { x: world.state.player.x, y: world.state.player.y } : clickToWorld(smoke.point);
+    }
+    const events = world.step(STEP, input.steer(), input.sneaking(), throwAt, smokeAt);
     if (events & EVENT_COIN) audio.coin();
+    if (events & EVENT_KEYCARD) audio.keycard();
     if (events & EVENT_ARTIFACT) audio.artifact();
+    if (events & EVENT_SMOKE) audio.smoke();
+    if (events & EVENT_LASER) audio.laserTrip();
+    if ((events & EVENT_ALARM) && world.state.cameras.some((c) => c.alarmed)) audio.cameraAlarm();
     if (events & EVENT_CAUGHT) audio.caught();
     if (events & EVENT_LEVEL_CLEAR) {
       endGame(true);

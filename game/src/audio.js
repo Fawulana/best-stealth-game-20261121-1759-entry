@@ -1,7 +1,8 @@
 // Every sound is synthesised with WebAudio — no audio files, no network.
-// Footsteps, pebble tosses, pickup chimes, the alarm sting, the caught thud,
-// the win fanfare and a quiet ambient drone. The context starts on the first
-// user gesture, as browsers require.
+// Footsteps, pebble tosses, smoke hisses, pickup chimes, the alarm sting,
+// the camera beep, the laser zap, the caught thud, the win fanfare and a
+// quiet ambient drone. The context starts on the first user gesture, as
+// browsers require.
 
 export function createAudio() {
   let context = null;
@@ -114,15 +115,34 @@ export function createAudio() {
       noise(0.12, 0.16, 1200);
       tone(320, 0.12, 'triangle', 0.1, 0, 180);
     },
+    /** A soft hiss as the smoke blooms. */
+    smoke() {
+      noise(0.5, 0.14, 1800);
+      noise(0.4, 0.08, 600, 0.1);
+    },
     coin() {
       tone(988, 0.09, 'sine', 0.14);
       tone(1319, 0.14, 'sine', 0.14, 0.07);
+    },
+    keycard() {
+      tone(784, 0.08, 'square', 0.08);
+      tone(1175, 0.12, 'square', 0.08, 0.08);
     },
     artifact() {
       [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, 'sine', 0.16, i * 0.09));
     },
     suspicious() {
       tone(440, 0.18, 'square', 0.07, 0, 330);
+    },
+    /** Two short beeps when a camera locks on. */
+    cameraAlarm() {
+      tone(1200, 0.1, 'square', 0.09);
+      tone(1200, 0.1, 'square', 0.09, 0.14);
+    },
+    /** A sharp zap when the laser grid trips — the one sound you never want. */
+    laserTrip() {
+      tone(1800, 0.15, 'sawtooth', 0.14, 0, 300);
+      noise(0.1, 0.12, 3000);
     },
     alarm() {
       tone(233, 0.35, 'sawtooth', 0.16, 0, 466);

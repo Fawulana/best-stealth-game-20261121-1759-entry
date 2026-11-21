@@ -1,10 +1,15 @@
-// Guard and sentry behaviour. A guard walks its patrol loop, grows suspicious
-// when it half-sees you, investigates the last place it saw you, and chases
-// when the detection meter fills. A sentry is a fixed searchlight that sweeps
-// back and forth and raises the alarm the same way, but never moves.
-// States: patrol, suspicious, investigate, chase, search, return.
+// Guard, dog, sentry and camera behaviour. A guard walks its patrol loop,
+// grows suspicious when it half-sees you, investigates the last place it saw
+// you, and chases when the detection meter fills. A dog runs the same state
+// machine with a dog's senses: short, wide sight, but it hears footsteps
+// from far away and runs you down. A sentry is a fixed searchlight that
+// sweeps back and forth and raises the alarm the same way, but never moves.
+// A camera is a wall-mounted eye with a long, narrow cone and a slow sweep:
+// when its meter fills it raises the alarm level and sends the nearest
+// guard to look. States: patrol, suspicious, investigate, chase, search,
+// return.
 
-import { GUARD, SENTRY, TILE } from './config.js';
+import { CAMERA, DOG, GUARD, SENTRY, TILE } from './config.js';
 
 export const GUARD_PATROL = 'patrol';
 export const GUARD_SUSPICIOUS = 'suspicious';
@@ -34,11 +39,42 @@ export function createGuard(spawnTile, waypoints) {
   };
 }
 
+/** A dog is a guard with a dog's senses: same state machine, DOG numbers. */
+export function createDog(spawnTile, waypoints) {
+  const dog = createGuard(spawnTile, waypoints);
+  dog.kind = 'dog';
+  return dog;
+}
+
 export function createSentry(tile, startAngle) {
   return {
     kind: 'sentry',
     x: (tile[0] + 0.5) * TILE,
     y: (tile[1] + 0.5) * TILE,
+    angle: startAngle,
+    sweepDirection: 1,
+    sweepCentre: startAngle,
+    detection: 0,
+    justAlarmed: false,
+    alarmed: false,
+  };
+}
+
+/**
+ * A wall-mounted camera. Its body sits on the wall tile, but its eye pokes
+ * out of the wall by half a tile plus a little, so its cone starts in open
+ * floor instead of inside the wall it is mounted on. x/y is the eye (what
+ * sees and what the cone is drawn from); bx/by is the body (what is drawn).
+ */
+export function createCamera(tile, startAngle) {
+  const bx = (tile[0] + 0.5) * TILE;
+  const by = (tile[1] + 0.5) * TILE;
+  return {
+    kind: 'camera',
+    x: bx + Math.cos(startAngle) * (TILE / 2 + 4),
+    y: by + Math.sin(startAngle) * (TILE / 2 + 4),
+    bx,
+    by,
     angle: startAngle,
     sweepDirection: 1,
     sweepCentre: startAngle,
@@ -62,19 +98,20 @@ function moveToward(body, tx, ty, speed, dt) {
 }
 
 /**
- * One guard step. `see` tells whether the guard currently sees the player and
- * how strongly (0..1); `hear` is a noise point to investigate, or null; and
- * `player` is the player's current position, for the catch check. The
- * callbacks report state changes so the world can play sounds and score them.
+ * One guard (or dog) step. `see` tells whether it currently sees the player
+ * and how strongly (0..1); `hear` is a noise point to investigate, or null;
+ * `player` is the player's current position, for the catch check. `cfg` is
+ * the GUARD or DOG numbers; the callbacks report state changes so the world
+ * can play sounds and score them.
  */
-export function stepGuard(guard, dt, see, hear, player, onCaught) {
+export function stepGuard(guard, dt, see, hear, player, onCaught, cfg = GUARD) {
   guard.justBecameSuspicious = false;
   guard.justAlarmed = false;
   guard.justLost = false;
   guard.stateTime += dt;
 
   // Detection rises while the player is seen, falls while hidden.
-  if (see > 0) guard.detection = Math.min(1, guard.detection + see * GUARD.detectRate * dt);
+  if (see > 0) guard.detection = Math.min(1, guard.detection + see * cfg.detectRate * dt);
   else guard.detection = Math.max(0, guard.detection - 0.22 * dt);
 
   if (hear && guard.state !== GUARD_CHASE) {
@@ -89,7 +126,7 @@ export function stepGuard(guard, dt, see, hear, player, onCaught) {
         guard.state = GUARD_CHASE;
         guard.stateTime = 0;
         guard.justAlarmed = true;
-      } else if (guard.detection >= GUARD.suspectAt) {
+      } else if (guard.detection >= cfg.suspectAt) {
         guard.state = GUARD_SUSPICIOUS;
         guard.stateTime = 0;
         guard.justBecameSuspicious = true;
@@ -97,7 +134,7 @@ export function stepGuard(guard, dt, see, hear, player, onCaught) {
         guard.pauseTime -= dt;
       } else {
         const wp = guard.waypoints[guard.waypointIndex];
-        if (moveToward(guard, wp.x, wp.y, GUARD.patrolSpeed, dt)) {
+        if (moveToward(guard, wp.x, wp.y, cfg.patrolSpeed, dt)) {
           guard.waypointIndex = (guard.waypointIndex + 1) % guard.waypoints.length;
           guard.pauseTime = 0.6;
         }
@@ -125,7 +162,7 @@ export function stepGuard(guard, dt, see, hear, player, onCaught) {
         guard.state = GUARD_CHASE;
         guard.stateTime = 0;
         guard.justAlarmed = true;
-      } else if (guard.target && moveToward(guard, guard.target.x, guard.target.y, GUARD.investigateSpeed, dt)) {
+      } else if (guard.target && moveToward(guard, guard.target.x, guard.target.y, cfg.investigateSpeed, dt)) {
         guard.state = GUARD_SEARCH;
         guard.stateTime = 0;
       }
@@ -133,8 +170,8 @@ export function stepGuard(guard, dt, see, hear, player, onCaught) {
     }
     case GUARD_CHASE: {
       if (guard.lastSeen) {
-        moveToward(guard, guard.lastSeen.x, guard.lastSeen.y, GUARD.chaseSpeed, dt);
-        if (see <= 0 && guard.stateTime > GUARD.chaseMemory) {
+        moveToward(guard, guard.lastSeen.x, guard.lastSeen.y, cfg.chaseSpeed, dt);
+        if (see <= 0 && guard.stateTime > cfg.chaseMemory) {
           guard.state = GUARD_SEARCH;
           guard.stateTime = 0;
           guard.justLost = true;
@@ -143,7 +180,7 @@ export function stepGuard(guard, dt, see, hear, player, onCaught) {
         guard.state = GUARD_SEARCH;
         guard.stateTime = 0;
       }
-      if (onCaught && player && Math.hypot(player.x - guard.x, player.y - guard.y) < GUARD.radius + 14) {
+      if (onCaught && player && Math.hypot(player.x - guard.x, player.y - guard.y) < cfg.radius + 14) {
         onCaught(guard);
       }
       break;
@@ -155,7 +192,7 @@ export function stepGuard(guard, dt, see, hear, player, onCaught) {
         guard.state = GUARD_CHASE;
         guard.stateTime = 0;
         guard.justAlarmed = true;
-      } else if (guard.stateTime > GUARD.searchTime) {
+      } else if (guard.stateTime > cfg.searchTime) {
         guard.state = GUARD_RETURN;
         guard.stateTime = 0;
       }
@@ -173,7 +210,7 @@ export function stepGuard(guard, dt, see, hear, player, onCaught) {
         }
       });
       guard.waypointIndex = nearest;
-      if (moveToward(guard, guard.waypoints[nearest].x, guard.waypoints[nearest].y, GUARD.patrolSpeed, dt)) {
+      if (moveToward(guard, guard.waypoints[nearest].x, guard.waypoints[nearest].y, cfg.patrolSpeed, dt)) {
         guard.state = GUARD_PATROL;
         guard.stateTime = 0;
         guard.waypointIndex = (nearest + 1) % guard.waypoints.length;
@@ -198,5 +235,22 @@ export function stepSentry(sentry, dt, see) {
     sentry.justAlarmed = true;
   } else if (sentry.detection < 0.4) {
     sentry.alarmed = false;
+  }
+}
+
+/** One camera step: a slow, narrow sweep; its alarm is the world's to raise.
+ *  A camera never chases — it watches, and it calls the guards. */
+export function stepCamera(camera, dt, see) {
+  camera.justAlarmed = false;
+  camera.angle += camera.sweepDirection * CAMERA.sweepSpeed * dt;
+  if (camera.angle > camera.sweepCentre + CAMERA.sweepArc) camera.sweepDirection = -1;
+  if (camera.angle < camera.sweepCentre - CAMERA.sweepArc) camera.sweepDirection = 1;
+  if (see > 0) camera.detection = Math.min(1, camera.detection + see * CAMERA.detectRate * dt);
+  else camera.detection = Math.max(0, camera.detection - 0.22 * dt);
+  if (camera.detection >= 1 && !camera.alarmed) {
+    camera.alarmed = true;
+    camera.justAlarmed = true;
+  } else if (camera.detection < 0.4) {
+    camera.alarmed = false;
   }
 }

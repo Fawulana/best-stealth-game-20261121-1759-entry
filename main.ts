@@ -1,4 +1,6 @@
-// Shadow Vault — a top-down stealth heist game (Node 22, standard library only).
+// Shadow Vault — a top-down stealth heist game in four vaults: patrols,
+// a guard dog, wall cameras, a pulsing laser grid and smoke bombs (Node 22,
+// standard library only).
 // SPDX-License-Identifier: MIT
 // The game is this directory's game/ folder: plain static files a desktop
 // browser loads offline (game/index.html and its ES modules, no library and

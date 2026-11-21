@@ -1,7 +1,9 @@
 // Keyboard and mouse input. Held keys give a steering vector; one-shot presses
 // (confirm, pause, sneak toggle is held) are queued as bit flags and taken once
 // by the loop, so a press between two frames is never lost or counted twice.
-// A mouse click throws a pebble toward the click point.
+// A left mouse click throws a pebble toward the click point; the X key or a
+// right click drops a smoke bomb — at your feet for X, at the click for a
+// right click.
 
 export const ACTION_CONFIRM = 1;
 export const ACTION_PAUSE = 2;
@@ -14,6 +16,7 @@ const RIGHT = new Set(['ArrowRight', 'KeyD']);
 const CONFIRM = new Set(['Space', 'Enter']);
 const PAUSE = new Set(['KeyP', 'Escape']);
 const SNEAK = new Set(['ShiftLeft', 'ShiftRight', 'KeyC']);
+const SMOKE = new Set(['KeyX']);
 
 export function createInput(canvas) {
   let up = false;
@@ -23,6 +26,8 @@ export function createInput(canvas) {
   let sneak = false;
   let actions = 0;
   let click = null;
+  let smokeClick = null;
+  let smokeHere = false;
 
   window.addEventListener('keydown', (event) => {
     if (UP.has(event.code)) up = true;
@@ -30,11 +35,14 @@ export function createInput(canvas) {
     else if (LEFT.has(event.code)) left = true;
     else if (RIGHT.has(event.code)) right = true;
     else if (SNEAK.has(event.code)) sneak = true;
-    else if (CONFIRM.has(event.code)) {
+    else if (SMOKE.has(event.code)) {
+      if (!event.repeat) smokeHere = true;
+    } else if (CONFIRM.has(event.code)) {
       if (!event.repeat) actions |= ACTION_CONFIRM;
     } else if (PAUSE.has(event.code)) {
       if (!event.repeat) actions |= ACTION_PAUSE;
     } else return;
+    // Space and Enter also scroll the page: keep the game still instead.
     event.preventDefault();
   });
   window.addEventListener('keyup', (event) => {
@@ -54,8 +62,12 @@ export function createInput(canvas) {
   });
   canvas.addEventListener('pointerdown', (event) => {
     const rect = canvas.getBoundingClientRect();
-    click = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    if (event.button === 2) smokeClick = point;
+    else click = point;
   });
+  // The right click is a game action, not a browser menu.
+  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
 
   return {
     /** Normalised steering vector from the held movement keys. */
@@ -80,6 +92,19 @@ export function createInput(canvas) {
       const taken = click;
       click = null;
       return taken;
+    },
+    /**
+     * A smoke request since the last call: 'here' drops the bomb at the
+     * thief's feet (the X key), a point drops it there (right click).
+     */
+    takeSmoke() {
+      if (smokeHere) {
+        smokeHere = false;
+        return { here: true };
+      }
+      const taken = smokeClick;
+      smokeClick = null;
+      return taken ? { point: taken } : null;
     },
   };
 }
